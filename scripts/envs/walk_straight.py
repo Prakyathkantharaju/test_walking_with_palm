@@ -6,6 +6,11 @@ from gymnasium import utils
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Box
 
+import sys
+sys.path.append('/home/prakyath/github/personal/test_walking_with_palm')
+
+from utils.integration import AccIntegration
+
 
 # Skiping default camera config
 
@@ -30,8 +35,10 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
         health_reward: float = 0.99, 
         ctrl_cost_weight: float = 1e-3, 
         weight_smooth_phase_plane: float = 1e-3,
-        healthy_state_range: Tuple[float, float]= (100, -100), 
-        healthy_z_range: Tuple[float, float] = (-0.2, 0.2)
+        healthy_state_range: Tuple[float, float]= (0.3, -0.3), 
+        healthy_z_range: Tuple[float, float] = (0.03, 0.2),
+        side_cost_weight: float = 1e-3,
+        
         ) -> None:
 
         utils.EzPickle.__init__(
@@ -63,6 +70,8 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
         self._weight_smooth_phase_plane = weight_smooth_phase_plane
         self._healthy_state_range = healthy_state_range
         self._healthy_z_range = healthy_z_range
+        self._side_cost_weight = side_cost_weight
+        self._reset_noise_scale = 1e-3
 
 
         # starting the mujoco env
@@ -103,12 +112,19 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
             low=-np.inf, high=np.inf, shape=(obs_size,), dtype=np.float32
         )
 
+        self.action_space = Box(
+            low=-1.0, high=1.0, shape=(self.model.nu,), dtype=np.float32
+                    )
+
         self.observation_struction = {
             "acc": 3,
             "gyro": 3,
             "position": self.data.qpos.size,
             "velocity": self.data.qvel.size
         }
+
+        self.acc_to_pos = AccIntegration()
+        self.prev_com_pos = self.get_body_com("torso").copy()
 
     def _get_obs(self) -> np.ndarray:
         obs = []
@@ -122,14 +138,24 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
             obs += self.data.qvel.tolist()
         return np.array(obs)
 
+    def _calculate_position(self, acc: np.ndarray) -> np.ndarray:
+        acc = acc.reshape(3,-1) # make sure it is 3xn
+        acc = acc * 10e9
+        acc[2,:] -= 9.81 * 10e9
+        return self.acc_to_pos.predict(acc)
+
     def _get_reward(self) -> float:
         #TODO: add the reward function
-        return 0.0
 
-    def _get_control_cost(self, action: np.ndarray) -> float:
-        #TODO: add the control cost
-        return 0.0
+        # forward reward
+        com = self.get_body_com("torso")
+        forward_reward = (com[0] - self.prev_com_pos[0])/self.dt
+        forward_reward *= self._foward_reward_weight
 
+        return forward_reward
+
+    def _get_obs(self) -> np.ndarray:
+        return self.data.sensordata
 
     def reset_model(self):
         noise_low = -self._reset_noise_scale
@@ -157,19 +183,29 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
     @property
     def terminate(self) -> bool:
         #TODO: add the termination condition
+        com = self.get_body_com("torso")
+        if com[2] < self._healthy_z_range[0]:
+            return True
+        if com[1] < self._healthy_state_range[1] and com[1] > self._healthy_state_range[0]:
+            return True
         return False
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         self.do_simulation(action, self.frame_skip)
         obs = self._get_obs()
         reward = self._get_reward()
-        cost = self._get_control_cost(action)
+        com = self.get_body_com("torso")
+        cost = self._ctrl_cost_weight * np.sum(np.square(action))
+        cost_sideway_stepping = self._side_cost_weight * np.square(com[1])
+        reward = reward - cost_sideway_stepping - cost
         terminate = self.terminate
         reward -= cost
 
         info = {
             "reward_forward": reward,
-            "reward_ctrl": -cost,}
+            "reward_ctrl": -cost,
+            "com": com}
+        self.prev_com_pos = com.copy()
         return obs, reward, terminate, False, info
 
 
@@ -181,4 +217,8 @@ if __name__ == "__main__":
 
 
     walk_env = WalkerStraight(model_path=args.model_path)
-
+    walk_env.reset()
+    for _ in range(100):
+        action = walk_env.action_space.sample()
+        obs, reward, terminate, _, info = walk_env.step(action)
+        print(info["com"], terminate)

@@ -48,7 +48,7 @@ if __name__ == "__main__":
             acc_arr = acc_arr * 10e10
             acc_arr = acc_arr.round(2)
             acc_arr[2,:] -= 9.81 * 10e10
-            print(np.mean(acc_arr, axis = 1))
+            print(data.body("torso").xpos)
             position = AccInt.predict(acc_arr).reshape(3,1)
             pos = np.hstack((pos, position))
 
