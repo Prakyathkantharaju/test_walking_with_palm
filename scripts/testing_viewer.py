@@ -1,11 +1,12 @@
 
-import mujoco #type: reportMissingImports=false
+import mujoco
 import mujoco_viewer
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy import integrate
-import scipy.signal as signal
+import sys
+sys.path.append('/home/prakyath/github/personal/test_walking_with_palm')
+from utils.integration import AccIntegration
 
 
 
@@ -26,38 +27,36 @@ if __name__ == "__main__":
     angle = 0.00
     store_data = []
 
+    AccInt = AccIntegration()
 
-    def _integration_acc_to_position(acc, prev_pos, prev_vel):
-        dt = 0.01
-        vel = integrate.trapezoid(acc, dx=dt, axis=0)
-        prev_vel = np.concatenate([prev_vel, vel.reshape(1, 3)], axis=0)
-        pos = integrate.trapezoid(prev_vel, dx=dt, axis=0)
-        prev_pos = np.concatenate([prev_pos.reshape(-1,3), pos.reshape(1, 3)], axis = 0)
-        return prev_vel, prev_pos
 
-    pos = np.zeros((1, 3))
-    vel = np.zeros((1, 3))
-    acc = [] 
+
+
+    pos = np.zeros((3, 1))
+
+    acc = []
     for i in range(10000):
         #data.ctrl[7] = -0.8
-        # print(data.sensordata[3:]) # expectation is 6
-        acc.append(data.sensordata[:3])
-        if len(acc) > 10:
-            acc_arr = np.array(acc)
-            vel, pos = _integration_acc_to_position(acc_arr, pos, vel)
-            pos = signal.detrend(pos)
-            vel = signal.detrend(vel)
-            print(signal.detrend(pos)[-1,:])
-            acc = []
-        
+        if i > 200:
+            data.ctrl[7] = 0.8
+        acc.append(data.sensordata[:3].reshape(3,1))
+        if len(acc) > 100:
+            acc_arr = np.array(acc)[:, :, 0].T
+            acc_arr = acc_arr * 10e9
+            acc_arr = acc_arr.round(2)
+            acc_arr[2,:] -= 9.81 * 10e9
+            print(np.mean(acc_arr, axis = 1))
+            position = AccInt.predict(acc_arr).reshape(3,1)
+            pos = np.hstack((pos, position))
+
         if viewer.is_alive:
             mujoco.mj_step(model, data) #type: ignore
             viewer.render()
+
         else:
             break
 
-    print(pos.shape)
-    plt.plot()
-    plt.show(signal.detrend(pos))
+    plt.plot(pos.T)
+    plt.show()
     # close
     viewer.close()
