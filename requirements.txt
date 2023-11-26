@@ -4,3 +4,7 @@ torch
 optuna
 matplotlib
 rl-zoo3
+scipy
+mujoco
+mujoco-python-viewer
+gym
