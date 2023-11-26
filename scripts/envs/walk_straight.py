@@ -103,11 +103,11 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
         if self._include_gyro:
             obs_size += 3 # hardcoding this but in the future it should be dynamic
 
-        if self._include_position:
-            obs_size += self.data.qpos.size
+        #if self._include_position:
+            #obs_size += self.data.qpos.size
 
-        if self._include_velocity:
-            obs_size += self.data.qvel.size
+        #if self._include_velocity:
+            #obs_size += self.data.qvel.size
 
 
 
