@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     # simulate and render
     angle = 0.00
-    store_data = []
+    store_dat = []
 
     AccInt = AccIntegration()
 

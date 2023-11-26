@@ -5,6 +5,7 @@ import numpy as np
 from gymnasium import utils
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Box
+import os
 
 import sys
 sys.path.append('/home/prakyath/github/personal/test_walking_with_palm')
@@ -38,8 +39,9 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
         healthy_state_range: Tuple[float, float]= (0.3, -0.3), 
         healthy_z_range: Tuple[float, float] = (0.03, 0.2),
         side_cost_weight: float = 1e-3,
-        
+        max_episode_steps: int = 1000,
         ) -> None:
+        print(os.getcwd())
 
         utils.EzPickle.__init__(
         self, 
@@ -72,6 +74,7 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
         self._healthy_z_range = healthy_z_range
         self._side_cost_weight = side_cost_weight
         self._reset_noise_scale = 1e-3
+        self.max_episode_steps = max_episode_steps
 
 
         # starting the mujoco env
@@ -125,6 +128,7 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
 
         self.acc_to_pos = AccIntegration()
         self.prev_com_pos = self.get_body_com("torso").copy()
+        self.i = 0
 
     def _get_obs(self) -> np.ndarray:
         obs = []
@@ -145,7 +149,6 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
         return self.acc_to_pos.predict(acc)
 
     def _get_reward(self) -> float:
-        #TODO: add the reward function
 
         # forward reward
         com = self.get_body_com("torso")
@@ -171,10 +174,10 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
         self.set_state(qpos, qvel)
 
         observation = self._get_obs()
+        self.i = 0
         return observation
 
     def _get_reset_info(self):
-        #TODO: add the reset information, position and velocity
         return {
             "x_position": self.data.qpos[0],
             "z_distance_from_origin": self.data.qpos[1] - self.init_qpos[1],
@@ -182,7 +185,6 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
 
     @property
     def terminate(self) -> bool:
-        #TODO: add the termination condition
         com = self.get_body_com("torso")
         if com[2] < self._healthy_z_range[0]:
             return True
@@ -191,6 +193,7 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
         return False
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
+        self.i += 1
         self.do_simulation(action, self.frame_skip)
         obs = self._get_obs()
         reward = self._get_reward()
@@ -199,13 +202,17 @@ class WalkerStraight(MujocoEnv, utils.EzPickle):
         cost_sideway_stepping = self._side_cost_weight * np.square(com[1])
         reward = reward - cost_sideway_stepping - cost
         terminate = self.terminate
-        reward -= cost
+        if self.i > self.max_episode_steps:
+            terminate = True
+            reward += 1000
 
         info = {
             "reward_forward": reward,
             "reward_ctrl": -cost,
             "com": com}
+
         self.prev_com_pos = com.copy()
+
         return obs, reward, terminate, False, info
 
 
